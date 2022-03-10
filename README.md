@@ -1,8 +1,8 @@
 ## Advanced photo uploads in Express with Nextjs Image placeholder
 
-We will create a custom Multer Storage Engine to upload an image with a placeholder that we will use for Nextjs image component
+We will be creating a custom Multer Storage Engine to upload an image and a placeholder that we will use for Nextjs Image component.
 
-We will be using the following packages to build our application:
+We are going to use the following packages to build our application:
 
 - express: A very popular Node server.
 - multer: A package for extracting files from multipart/form-data requests.
@@ -14,8 +14,50 @@ We will be using the following packages to build our application:
 
 Creating the Multer Storage Engine create the handler for the upload request. We are going to implement the /upload route to actually handle the upload and we will be using the Multer package for that.
 
+```typescript
+// server.ts
+
+// setup a new instance of the AvatarStorage engine
+const storage = Storage({
+  s3,
+  bucket: process.env.SPACES_BUCKET_NAME,
+  acl: "public-read",
+  threshold: 1000,
+  storage: "locale",
+  dir: "public",
+  output: "jpg",
+});
+
+const limits = {
+  files: 1, // allow only 1 file per request
+  fileSize: 5 * (1024 * 1024), // 10 MB (max file size)
+};
+
+// setup multer
+const upload = multer({
+  storage,
+  limits: limits,
+});
+
+interface CustomFileResult extends Partial<Express.Multer.File> {
+  image: string;
+  placeholder: string;
+  bucket?: string;
+}
+
+app.post("/upload", upload.single("photo"), function (req, res) {
+  const file = req.file as CustomFileResult;
+  const { mimetype, originalname, image, placeholder, bucket } = file;
+  res.json({ mimetype, originalname, image, placeholder, bucket });
+});
+```
+
 The filename for normal image and its placeholder takes the format `[generated_filename]_placeholder.[output_extension]`
 and `[generated_filename].[output_extension]` Then the image clone and the stream are put in a batch for processing.
+
+### Creating the Multer Storage Engine
+
+We will have to create a custom storage engine to use with Multer. Let’s create a new folder in our project root named helpers and create a new file storage.ts inside it for our custom storage engine. The file should contain the following blueprint code snippet:
 
 ```typescript
 // storage.ts
@@ -349,10 +391,10 @@ export default (opts: Options) => {
 };
 ```
 
-## Nextjs images placeholder
+## Nextjs Images placeholder
 
-After we upload our image we received a response with the image path and the placeholder.
-Let's create a hook useGetDataUrl.ts to Fetch blob and convert a 16px image placeholder to base64.
+After we upload our image we received a response with the image path and it's placeholder.
+Let's create a hook useGetDataUrl.ts to Fetch blob and convert the placeholder to base64.
 
 ```typescript
 import { useEffect, useState } from "react";

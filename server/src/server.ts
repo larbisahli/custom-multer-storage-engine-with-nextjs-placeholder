@@ -52,9 +52,6 @@ interface CustomFileResult extends Partial<Express.Multer.File> {
 
 app.post('/upload', upload.single('photo'), function (req, res) {
   const file = req.file as CustomFileResult;
-
-  console.log('<= req.file =>', file); // form files
-
   const { mimetype, originalname, image, placeholder, bucket } = file;
   res.json({ mimetype, originalname, image, placeholder, bucket });
 });

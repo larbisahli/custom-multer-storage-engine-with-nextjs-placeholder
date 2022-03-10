@@ -2,7 +2,7 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import Storage from './helpers/Storage';
+import Storage from './helpers/storage';
 import AWS from 'aws-sdk';
 
 dotenv.config();

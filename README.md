@@ -12,10 +12,33 @@ We are going to use the following packages to build our application:
 - concat-stream: A package for creating a writable stream that concatenates all the data from a stream and calls a callback with the result.
 - streamifier: A package to convert a Buffer/String into a readable stream.
 
-Creating the Multer Storage Engine create the handler for the upload request. We are going to implement the /upload route to actually handle the upload and we will be using the Multer package for that.
+Creating the Multer Storage Engine create the handler for the upload request. We are going to implement the `/upload` route to actually handle the upload and we will be using the Multer package for that.
 
 ```typescript
 // server.ts
+import express, { Application } from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import multer from "multer";
+import Storage from "./helpers/storage";
+import AWS from "aws-sdk";
+
+dotenv.config();
+
+const app: Application = express();
+
+// Set S3 endpoint
+const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_BUCKET_ENDPOINT);
+
+const s3 = new AWS.S3({
+  endpoint: spacesEndpoint,
+  accessKeyId: process.env.SPACES_ACCESS_KEY_ID,
+  secretAccessKey: process.env.SPACES_ACCESS_SECRET_KEY,
+});
+
+app.use(cors());
+
+app.use("/media", express.static("public"));
 
 // setup a new instance of the AvatarStorage engine
 const storage = Storage({
@@ -49,6 +72,12 @@ app.post("/upload", upload.single("photo"), function (req, res) {
   const file = req.file as CustomFileResult;
   const { mimetype, originalname, image, placeholder, bucket } = file;
   res.json({ mimetype, originalname, image, placeholder, bucket });
+});
+
+const PORT = 5000;
+
+app.listen(PORT, function () {
+  console.log(`Express Server started on port ${PORT}`);
 });
 ```
 

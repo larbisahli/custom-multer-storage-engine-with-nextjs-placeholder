@@ -1,4 +1,4 @@
-## Custom Multer Sstorage Engine in Express with Nextjs Image placeholder
+## A Custom Multer Storage Engine in Express with Nextjs Image placeholder
 
 We will be creating a custom Multer Storage Engine to upload an image and a placeholder that we will use for Nextjs Image component.
 

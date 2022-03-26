@@ -21,19 +21,17 @@ import cors from "cors";
 import dotenv from "dotenv";
 import multer from "multer";
 import Storage from "./helpers/storage";
-import AWS from "aws-sdk";
+import S3 from "aws-sdk/clients/s3";
 
 dotenv.config();
 
 const app: Application = express();
 
 // Set S3 endpoint
-const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_BUCKET_ENDPOINT);
-
-const s3 = new AWS.S3({
-  endpoint: spacesEndpoint,
-  accessKeyId: process.env.SPACES_ACCESS_KEY_ID,
-  secretAccessKey: process.env.SPACES_ACCESS_SECRET_KEY,
+const s3 = new S3({
+  region: process.env.AWS_BUCKET_REGION,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_ACCESS_SECRET_KEY,
 });
 
 app.use(cors());
@@ -43,11 +41,9 @@ app.use("/media", express.static("public"));
 // setup a new instance of the AvatarStorage engine
 const storage = Storage({
   s3,
-  bucket: process.env.SPACES_BUCKET_NAME,
+  bucket: process.env.AWS_BUCKET_NAME,
   acl: "public-read",
   threshold: 1000,
-  storage: "locale",
-  dir: "public",
   output: "jpg",
 });
 
@@ -94,7 +90,6 @@ We will have to create a custom storage engine to use with Multer. Let’s creat
 // Load dependencies
 import { Request } from "express";
 import multer from "multer";
-import path from "path";
 import fs from "fs";
 import Jimp from "jimp";
 import concat from "concat-stream";
@@ -107,8 +102,6 @@ const nanoid = customAlphabet("abcdefghijklmnopqrstuvwxyz", 10);
 
 const PNG = "png";
 const JPEG = "jpeg" || "jpg";
-const typeS3 = "s3";
-const typeLocal = "locale";
 
 type nameFnType = (
   file: Express.Multer.File,
@@ -120,42 +113,30 @@ type Options = {
   bucket: string | null;
   acl: string;
   output?: typeof PNG | typeof JPEG;
-  storage?: typeof typeS3 | typeof typeLocal;
   quality?: number;
   threshold?: number | null;
   placeholderSize?: number;
-  dir: string;
 };
 
 interface CustomFileResult extends Partial<Express.Multer.File> {
-  image: string;
-  placeholder: string;
+  image?: string;
+  placeholder?: string;
   bucket?: string;
 }
 
 class CustomStorageEngine implements multer.StorageEngine {
   defaultOptions: Options;
   options: Options;
-  placeholder: string;
-  image: string;
-  filepath: string;
-  fileSharedName: string;
 
   constructor(opts: Options) {
     this.options = opts || undefined;
-    this.placeholder;
-    this.image;
-    this.filepath;
-    this.fileSharedName;
 
     // fallback for options
     this.defaultOptions = {
       s3: null,
       bucket: null,
       acl: null,
-      dir: null,
       output: "png",
-      storage: "locale",
       quality: 90,
       threshold: null,
       placeholderSize: 26,
@@ -164,17 +145,12 @@ class CustomStorageEngine implements multer.StorageEngine {
     // You can add more options
     const allowedOutputFormats = ["jpg", "jpeg", "png"];
 
-    if (this.options.dir && !fs.existsSync(this.options.dir)) {
-      fs.mkdirSync(this.options.dir);
-    }
-
     // If the option value is undefined or null it will fall back to the default option
     const allowedOutput = allowedOutputFormats?.includes(
       String(this.options.output ?? this.defaultOptions.output)?.toLowerCase()
     );
 
     if (!allowedOutput) throw new Error("Output is not allowed");
-    if (!this.options.dir) throw new Error("Expected dir to be string");
 
     switch (typeof opts.s3) {
       case "object":
@@ -183,8 +159,6 @@ class CustomStorageEngine implements multer.StorageEngine {
           throw new Error("Expected bucket to be string");
         break;
       default:
-        if (this.options.storage === typeS3)
-          throw new TypeError("Expected opts.s3 to be object");
         break;
     }
   }
@@ -194,17 +168,7 @@ class CustomStorageEngine implements multer.StorageEngine {
     const newDate = new Date();
     const Month = newDate.getMonth() + 1;
     const Year = newDate.getFullYear();
-
-    const dir = this.options.dir ?? this.defaultOptions.dir;
-    const dirPath = `${Year}/${Month}`;
-
-    const filePath = path.resolve(`${dir}/${Year}/${Month}`);
-
-    if (!fs.existsSync(filePath)) {
-      fs.mkdirSync(filePath, { recursive: true });
-    }
-
-    return { dirPath, filePath };
+    return `${Year}/${Month}`;
   };
 
   private _getMime = () => {
@@ -248,82 +212,7 @@ class CustomStorageEngine implements multer.StorageEngine {
     return (DateAsInt + "_" + nanoid())?.toLowerCase() + "." + output;
   };
 
-  _createOutputStream = (
-    filepath: string,
-    cb: (error?: Error | null, info?: CustomFileResult) => void
-  ) => {
-    const output = fs.createWriteStream(filepath);
-
-    // set callback fn as handler for the error event
-    output.on("error", cb);
-
-    // set handler for the finish event
-    output.on("finish", () => {
-      cb(null, {
-        destination: this.filepath,
-        mimetype: this._getMime(),
-        image: this.image,
-        placeholder: this.placeholder,
-      });
-    });
-
-    // return the output stream
-    return output;
-  };
-
-  private writeImage = (
-    filepath: string,
-    image: Jimp,
-    cb: (error?: Error, info?: CustomFileResult) => void,
-    { isPlaceholder }: { isPlaceholder: boolean }
-  ) => {
-    try {
-      // get the buffer of the Jimp image using the output mime type
-      image.getBuffer(this._getMime(), (err, buffer) => {
-        const storage = this.options.storage ?? this.defaultOptions.storage;
-
-        switch (storage) {
-          case typeLocal: {
-            // create a writable stream for it
-            const outputStream = this._createOutputStream(filepath, cb);
-            // create a read stream from the buffer and pipe it to the output stream
-            streamifier.createReadStream(buffer).pipe(outputStream);
-            break;
-          }
-          case typeS3:
-            this.options.s3.upload(
-              {
-                Bucket: this.options.bucket,
-                Key: isPlaceholder ? this.placeholder : this.image,
-                Body: streamifier.createReadStream(buffer),
-                ACL: this.options.acl,
-                ContentType: "application/octet-stream",
-              },
-              (error, response) => {
-                if (!error) {
-                  cb(null, {
-                    destination: this.filepath,
-                    mimetype: this._getMime(),
-                    image: this.image,
-                    placeholder: this.placeholder,
-                    bucket: response.Bucket,
-                  });
-                } else {
-                  cb(error);
-                }
-              }
-            );
-            break;
-          default:
-            break;
-        }
-      });
-    } catch (error) {
-      console.log("error :>", error);
-    }
-  };
-
-  _processImage = (
+  _processImage = async (
     image: Jimp,
     cb: (error?: Error, info?: CustomFileResult) => void,
     file: Express.Multer.File
@@ -336,7 +225,6 @@ class CustomStorageEngine implements multer.StorageEngine {
       this.options.placeholderSize ?? this.defaultOptions.placeholderSize;
 
     const filename = this.generateFilename(file, output);
-    this.fileSharedName = filename;
 
     // create a clone of the Jimp image
     let clone = image.clone();
@@ -353,31 +241,81 @@ class CustomStorageEngine implements multer.StorageEngine {
     const _filename = filenameSplit[0];
     const _output = filenameSplit[1];
 
-    const { filePath, dirPath } = this.getPath();
-
-    this.filepath = filePath;
+    const dirPath = this.getPath();
 
     // Original image processing
-    const originalImage = clone.clone();
-    const originalFilename = _filename + "." + _output;
-    // Set original image upload path
-    this.image = `${dirPath}/${originalFilename}`;
-    // create the complete filepath
-    const originalFilepath = path.join(this.filepath, originalFilename);
-    this.writeImage(originalFilepath, originalImage, cb, {
-      isPlaceholder: false,
-    });
+    const originalImageRespond = new Promise<AWS.S3.ManagedUpload.SendData>(
+      (resolve, reject) => {
+        const originalImage = clone.clone();
+        const originalFilename = _filename + "." + _output;
+        const image = `${dirPath}/${originalFilename}`;
+
+        originalImage.getBuffer(this._getMime(), (err, buffer) => {
+          this.options.s3.upload(
+            {
+              Bucket: this.options.bucket,
+              Key: image,
+              Body: streamifier.createReadStream(buffer),
+              //   ACL: this.options.acl,
+              ContentType: "application/octet-stream",
+            },
+            (error, response) => {
+              if (error) {
+                cb(error);
+                reject(error);
+              } else {
+                resolve(response);
+              }
+            }
+          );
+        });
+      }
+    );
 
     // Placeholder image processing
-    const placeholderImage = clone.resize(placeholderSize, Jimp.AUTO);
-    const placeholderFilename = _filename + "_" + "placeholder" + "." + _output;
-    // Set placeholder image upload path
-    this.placeholder = `${dirPath}/${placeholderFilename}`;
-    // create the complete filepath
-    const placeholderFilepath = path.join(this.filepath, placeholderFilename);
-    this.writeImage(placeholderFilepath, placeholderImage, cb, {
-      isPlaceholder: true,
-    });
+    const placeholderImageRespond = new Promise<AWS.S3.ManagedUpload.SendData>(
+      (resolve, reject) => {
+        const placeholderImage = clone.resize(placeholderSize, Jimp.AUTO);
+        const placeholderFilename =
+          _filename + "_" + "placeholder" + "." + _output;
+        const placeholder = `${dirPath}/${placeholderFilename}`;
+
+        placeholderImage.getBuffer(this._getMime(), (err, buffer) => {
+          this.options.s3.upload(
+            {
+              Bucket: this.options.bucket,
+              Key: placeholder,
+              Body: streamifier.createReadStream(buffer),
+              //   ACL: this.options.acl,
+              ContentType: "application/octet-stream",
+            },
+            (error, response) => {
+              if (error) {
+                cb(error);
+                reject(error);
+              } else {
+                resolve(response);
+              }
+            }
+          );
+        });
+      }
+    );
+
+    Promise.all([originalImageRespond, placeholderImageRespond]).then(
+      (valArray) => {
+        const image = valArray[0].Key;
+        const bucket = valArray[0].Bucket;
+        const placeholder = valArray[1].Key;
+
+        cb(null, {
+          mimetype: this._getMime(),
+          image,
+          placeholder,
+          bucket,
+        });
+      }
+    );
   };
 
   _handleFile = (

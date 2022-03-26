@@ -1,9 +1,17 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const jimp_1 = __importDefault(require("jimp"));
 const concat_stream_1 = __importDefault(require("concat-stream"));
@@ -13,24 +21,15 @@ const nanoid_1 = require("nanoid");
 const nanoid = (0, nanoid_1.customAlphabet)('abcdefghijklmnopqrstuvwxyz', 10);
 const PNG = 'png';
 const JPEG = 'jpeg' || 'jpg';
-const typeS3 = 's3';
-const typeLocal = 'locale';
 class CustomStorageEngine {
     constructor(opts) {
         var _a, _b;
         // Create a file path based on date
         this.getPath = () => {
-            var _a;
             const newDate = new Date();
             const Month = newDate.getMonth() + 1;
             const Year = newDate.getFullYear();
-            const dir = (_a = this.options.dir) !== null && _a !== void 0 ? _a : this.defaultOptions.dir;
-            const dirPath = `${Year}/${Month}`;
-            const filePath = path_1.default.resolve(`${dir}/${Year}/${Month}`);
-            if (!fs_1.default.existsSync(filePath)) {
-                fs_1.default.mkdirSync(filePath, { recursive: true });
-            }
-            return { dirPath, filePath };
+            return `${Year}/${Month}`;
         };
         this._getMime = () => {
             var _a;
@@ -61,76 +60,14 @@ class CustomStorageEngine {
             }
             return ((_d = (DateAsInt + '_' + nanoid())) === null || _d === void 0 ? void 0 : _d.toLowerCase()) + '.' + output;
         };
-        this._createOutputStream = (filepath, cb) => {
-            const output = fs_1.default.createWriteStream(filepath);
-            // set callback fn as handler for the error event
-            output.on('error', cb);
-            // set handler for the finish event
-            output.on('finish', () => {
-                cb(null, {
-                    destination: this.filepath,
-                    mimetype: this._getMime(),
-                    image: this.image,
-                    placeholder: this.placeholder,
-                });
-            });
-            // return the output stream
-            return output;
-        };
-        this.writeImage = (filepath, image, cb, { isPlaceholder }) => {
-            try {
-                // get the buffer of the Jimp image using the output mime type
-                image.getBuffer(this._getMime(), (err, buffer) => {
-                    var _a;
-                    const storage = (_a = this.options.storage) !== null && _a !== void 0 ? _a : this.defaultOptions.storage;
-                    switch (storage) {
-                        case typeLocal: {
-                            // create a writable stream for it
-                            const outputStream = this._createOutputStream(filepath, cb);
-                            // create a read stream from the buffer and pipe it to the output stream
-                            streamifier_1.default.createReadStream(buffer).pipe(outputStream);
-                            break;
-                        }
-                        case typeS3:
-                            this.options.s3.upload({
-                                Bucket: this.options.bucket,
-                                Key: isPlaceholder ? this.placeholder : this.image,
-                                Body: streamifier_1.default.createReadStream(buffer),
-                                ACL: this.options.acl,
-                                ContentType: 'application/octet-stream',
-                            }, (error, response) => {
-                                if (!error) {
-                                    cb(null, {
-                                        destination: this.filepath,
-                                        mimetype: this._getMime(),
-                                        image: this.image,
-                                        placeholder: this.placeholder,
-                                        bucket: response.Bucket,
-                                    });
-                                }
-                                else {
-                                    cb(error);
-                                }
-                            });
-                            break;
-                        default:
-                            break;
-                    }
-                });
-            }
-            catch (error) {
-                console.log('error :>', error);
-            }
-        };
-        this._processImage = (image, cb, file) => {
-            var _a, _b, _c, _d;
+        this._processImage = (image, cb, file) => __awaiter(this, void 0, void 0, function* () {
+            var _c, _d, _e, _f;
             // Get options
-            const output = (_a = this.options.output) !== null && _a !== void 0 ? _a : this.defaultOptions.output;
-            const quality = (_b = this.options.quality) !== null && _b !== void 0 ? _b : this.defaultOptions.quality;
-            const threshold = (_c = this.options.threshold) !== null && _c !== void 0 ? _c : this.defaultOptions.threshold;
-            const placeholderSize = (_d = this.options.placeholderSize) !== null && _d !== void 0 ? _d : this.defaultOptions.placeholderSize;
+            const output = (_c = this.options.output) !== null && _c !== void 0 ? _c : this.defaultOptions.output;
+            const quality = (_d = this.options.quality) !== null && _d !== void 0 ? _d : this.defaultOptions.quality;
+            const threshold = (_e = this.options.threshold) !== null && _e !== void 0 ? _e : this.defaultOptions.threshold;
+            const placeholderSize = (_f = this.options.placeholderSize) !== null && _f !== void 0 ? _f : this.defaultOptions.placeholderSize;
             const filename = this.generateFilename(file, output);
-            this.fileSharedName = filename;
             // create a clone of the Jimp image
             let clone = image.clone();
             // Auto scale the image dimensions to fit the threshold requirement
@@ -142,29 +79,65 @@ class CustomStorageEngine {
             const filenameSplit = filename.split('.');
             const _filename = filenameSplit[0];
             const _output = filenameSplit[1];
-            const { filePath, dirPath } = this.getPath();
-            this.filepath = filePath;
+            const dirPath = this.getPath();
             // Original image processing
-            const originalImage = clone.clone();
-            const originalFilename = _filename + '.' + _output;
-            // Set original image upload path
-            this.image = `${dirPath}/${originalFilename}`;
-            // create the complete filepath
-            const originalFilepath = path_1.default.join(this.filepath, originalFilename);
-            this.writeImage(originalFilepath, originalImage, cb, {
-                isPlaceholder: false,
+            const originalImageRespond = new Promise((resolve, reject) => {
+                const originalImage = clone.clone();
+                const originalFilename = _filename + '.' + _output;
+                const image = `${dirPath}/${originalFilename}`;
+                originalImage.getBuffer(this._getMime(), (err, buffer) => {
+                    this.options.s3.upload({
+                        Bucket: this.options.bucket,
+                        Key: image,
+                        Body: streamifier_1.default.createReadStream(buffer),
+                        //   ACL: this.options.acl,
+                        ContentType: 'application/octet-stream',
+                    }, (error, response) => {
+                        if (error) {
+                            cb(error);
+                            reject(error);
+                        }
+                        else {
+                            resolve(response);
+                        }
+                    });
+                });
             });
             // Placeholder image processing
-            const placeholderImage = clone.resize(placeholderSize, jimp_1.default.AUTO);
-            const placeholderFilename = _filename + '_' + 'placeholder' + '.' + _output;
-            // Set placeholder image upload path
-            this.placeholder = `${dirPath}/${placeholderFilename}`;
-            // create the complete filepath
-            const placeholderFilepath = path_1.default.join(this.filepath, placeholderFilename);
-            this.writeImage(placeholderFilepath, placeholderImage, cb, {
-                isPlaceholder: true,
+            const placeholderImageRespond = new Promise((resolve, reject) => {
+                const placeholderImage = clone.resize(placeholderSize, jimp_1.default.AUTO);
+                const placeholderFilename = _filename + '_' + 'placeholder' + '.' + _output;
+                const placeholder = `${dirPath}/${placeholderFilename}`;
+                placeholderImage.getBuffer(this._getMime(), (err, buffer) => {
+                    this.options.s3.upload({
+                        Bucket: this.options.bucket,
+                        Key: placeholder,
+                        Body: streamifier_1.default.createReadStream(buffer),
+                        //   ACL: this.options.acl,
+                        ContentType: 'application/octet-stream',
+                    }, (error, response) => {
+                        if (error) {
+                            cb(error);
+                            reject(error);
+                        }
+                        else {
+                            resolve(response);
+                        }
+                    });
+                });
             });
-        };
+            Promise.all([originalImageRespond, placeholderImageRespond]).then((valArray) => {
+                const image = valArray[0].Key;
+                const bucket = valArray[0].Bucket;
+                const placeholder = valArray[1].Key;
+                cb(null, {
+                    mimetype: this._getMime(),
+                    image,
+                    placeholder,
+                    bucket,
+                });
+            });
+        });
         this._handleFile = (req, file, cb) => {
             // create a writable stream using concat-stream that will
             // concatenate all the buffers written to it and pass the
@@ -189,33 +162,22 @@ class CustomStorageEngine {
             return;
         };
         this.options = opts || undefined;
-        this.placeholder;
-        this.image;
-        this.filepath;
-        this.fileSharedName;
         // fallback for options
         this.defaultOptions = {
             s3: null,
             bucket: null,
             acl: null,
-            dir: null,
             output: 'png',
-            storage: 'locale',
             quality: 90,
             threshold: null,
             placeholderSize: 26,
         };
         // You can add more options
         const allowedOutputFormats = ['jpg', 'jpeg', 'png'];
-        if (this.options.dir && !fs_1.default.existsSync(this.options.dir)) {
-            fs_1.default.mkdirSync(this.options.dir);
-        }
         // If the option value is undefined or null it will fall back to the default option
         const allowedOutput = allowedOutputFormats === null || allowedOutputFormats === void 0 ? void 0 : allowedOutputFormats.includes((_b = String((_a = this.options.output) !== null && _a !== void 0 ? _a : this.defaultOptions.output)) === null || _b === void 0 ? void 0 : _b.toLowerCase());
         if (!allowedOutput)
             throw new Error('Output is not allowed');
-        if (!this.options.dir)
-            throw new Error('Expected dir to be string');
         switch (typeof opts.s3) {
             case 'object':
                 if (!this.options.acl)
@@ -224,8 +186,6 @@ class CustomStorageEngine {
                     throw new Error('Expected bucket to be string');
                 break;
             default:
-                if (this.options.storage === typeS3)
-                    throw new TypeError('Expected opts.s3 to be object');
                 break;
         }
     }
@@ -233,4 +193,4 @@ class CustomStorageEngine {
 exports.default = (opts) => {
     return new CustomStorageEngine(opts);
 };
-//# sourceMappingURL=Storage.js.map
+//# sourceMappingURL=storage.js.map

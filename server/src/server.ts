@@ -3,19 +3,17 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import Storage from './helpers/storage';
-import AWS from 'aws-sdk';
+import S3 from 'aws-sdk/clients/s3';
 
 dotenv.config();
 
 const app: Application = express();
 
 // Set S3 endpoint
-const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_BUCKET_ENDPOINT);
-
-const s3 = new AWS.S3({
-  endpoint: spacesEndpoint,
-  accessKeyId: process.env.SPACES_ACCESS_KEY_ID,
-  secretAccessKey: process.env.SPACES_ACCESS_SECRET_KEY,
+const s3 = new S3({
+  region: process.env.AWS_BUCKET_REGION,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_ACCESS_SECRET_KEY,
 });
 
 app.use(cors());
@@ -25,11 +23,9 @@ app.use('/media', express.static('public'));
 // setup a new instance of the AvatarStorage engine
 const storage = Storage({
   s3,
-  bucket: process.env.SPACES_BUCKET_NAME,
+  bucket: process.env.AWS_BUCKET_NAME,
   acl: 'public-read',
   threshold: 1000,
-  storage: 'locale',
-  dir: 'public',
   output: 'jpg',
 });
 

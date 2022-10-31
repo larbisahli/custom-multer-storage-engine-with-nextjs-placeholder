@@ -288,7 +288,6 @@ class CustomStorageEngine implements multer.StorageEngine {
     file: Express.Multer.File & { image: string, placeholder: string },
     cb: (error: Error | null) => void
   ): void => {
-    console.log('file --> ', {file, image:this.image , placeholder:this.placeholder})
     this.options.s3.deleteObjects(
       {
         Bucket: this.options.bucket,

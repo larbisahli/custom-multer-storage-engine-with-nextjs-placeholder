@@ -1,8 +1,9 @@
+// server.ts
 import express, { Application } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import Storage from './helpers/storage';
+import Storage from './storage';
 import S3 from 'aws-sdk/clients/s3';
 
 dotenv.config();
@@ -18,8 +19,6 @@ const s3 = new S3({
 
 app.use(cors());
 
-app.use('/media', express.static('public'));
-
 // setup a new instance of the AvatarStorage engine
 const storage = Storage({
   s3,
@@ -31,7 +30,7 @@ const storage = Storage({
 
 const limits = {
   files: 1, // allow only 1 file per request
-  fileSize: 5 * (1024 * 1024), // 10 MB (max file size)
+  fileSize: 5 * (1024 * 1024), // 5 MB (max file size)
 };
 
 // setup multer
@@ -51,6 +50,25 @@ app.post('/upload', upload.single('photo'), function (req, res) {
   const { mimetype, originalname, image, placeholder, bucket } = file;
   res.json({ mimetype, originalname, image, placeholder, bucket });
 });
+
+app.get('/media/:y/:m/:key', function (req, res) {
+  // y -> year, m -> month
+  const { y, m, key } = req.params;
+  const downloadParams = {
+    Key: `${y}/${m}/${key}`,
+    Bucket: process.env.AWS_BUCKET_NAME,
+  };
+  try {
+    s3.getObject(downloadParams)
+      .createReadStream()
+      .on('error', (err) => {
+        return res.status(400).send();
+      })
+      .pipe(res);
+  } catch (error) {
+    return res.status(500).send();
+  }
+})
 
 const PORT = 5000;
 

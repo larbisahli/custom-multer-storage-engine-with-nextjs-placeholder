@@ -2,10 +2,7 @@
 /node_modules
 
 # production
-/build/
-
-/database
-/public/**
+/dist/
 
 # debug
 npm-debug.log*

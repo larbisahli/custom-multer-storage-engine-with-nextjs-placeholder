@@ -53,8 +53,8 @@ const Home: NextPage = () => {
               return (
                 <div key={i} className="gallery-image">
                   <ImageComponent
-                    src={`${process.env.MEDIA_URL}/${img.image}`}
-                    customPlaceholder={`${process.env.MEDIA_URL}/${img.placeholder}`}
+                    src={img.image}
+                    customPlaceholder={img.placeholder}
                     layout="fill"
                     objectFit="cover"
                   />

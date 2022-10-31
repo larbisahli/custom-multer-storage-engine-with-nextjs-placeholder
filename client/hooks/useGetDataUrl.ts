@@ -1,4 +1,7 @@
+// useGetDataUrl.ts
 import { useEffect, useState } from 'react';
+
+const mediaURL = 'http://127.0.0.1:5000/media'
 
 export function useGetDataUrl(customPlaceholder: string) {
   const [Base64Placeholder, setBase64Placeholder] = useState<string>(
@@ -8,7 +11,7 @@ export function useGetDataUrl(customPlaceholder: string) {
   useEffect(() => {
     async function toBase64() {
       try {
-        const data = await fetch(customPlaceholder);
+        const data = await fetch(`${mediaURL}/${customPlaceholder}`);
         const blob = await data.blob();
 
         // eslint-disable-next-line no-undef
